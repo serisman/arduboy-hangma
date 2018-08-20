@@ -79,7 +79,7 @@ void drawTitle() {
   arduboy.drawFastHLine(0,19,45);
   arduboy.setCursor(0,22);
   arduboy.print(F(" by serisman"));
-  arduboy.setCursor(0,64-15);
+  arduboy.setCursor(0,64-16);
   arduboy.print(F("Press A\n to begin."));
 }
 
