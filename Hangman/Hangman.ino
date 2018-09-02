@@ -2,27 +2,37 @@
 // --------
 // by serisman <arduboy@serisman.com>
 //
+// version: 1.2.0
+//  - Added Sound Effects (with ability to turn them off)
+//  - Added a menu system (can always get back to the main menu with the B button)
+//  - Moved the wins/losses score statistics to a separate screen with a reset option
 // version: 1.1.0
 //  - Added cumulative wins/losses tracking (save/restore to/from EEPROM)
 //  - Show correct answer on loss
 // version: 1.0.0
 //  - Initial Release
 
+#include <ArduboyTones.h>
+#include <ArduboyTonesPitches.h>
+
 #include <Arduboy2.h>
+Arduboy2 arduboy;
+ArduboyTones sound(arduboy.audio.enabled);
 
 //#define DEBUG 1
 
 #include "EEPROM_Utils.h"
 #include "words.h"
+#include "sounds.h"
 
 #define MODE_TITLE    0
-#define MODE_PLAY     1
-#define MODE_CORRECT  2
-#define MODE_DEAD     3
-
-Arduboy2 arduboy;
+#define MODE_STATS    1
+#define MODE_PLAY     2
+#define MODE_CORRECT  4
+#define MODE_DEAD     5
 
 uint8_t mode = MODE_TITLE;
+bool paused = false;
 
 uint8_t wins = 99;
 uint8_t losses = 99;
@@ -38,6 +48,8 @@ char buf[30];
 void setup() {
   arduboy.begin();
   arduboy.setFrameRate(30);
+  sound.tones(soundWin);
+  
   EEPROM_init();
   wins = EEPROM_getWins();
   losses = EEPROM_getLosses();
@@ -58,6 +70,9 @@ void nextFrame() {
     case MODE_TITLE:
       nextTitleFrame();
       break;
+    case MODE_STATS:
+      nextStatsFrame();
+      break;
     case MODE_PLAY:
       nextPlayFrame();
       break;
@@ -71,38 +86,150 @@ void nextFrame() {
   arduboy.display();
 }
 
+void showTitle(uint8_t cur) {
+  mode = MODE_TITLE;
+  cursor = cur;
+}
+
+void moveCursor(uint8_t num) {
+  if (arduboy.justPressed(UP_BUTTON)) {
+    if (cursor > 0) cursor --;
+  } else if (arduboy.justPressed(DOWN_BUTTON)) {
+    if (cursor < (num-1)) cursor ++;
+  }
+}
+
 void nextTitleFrame() {
+  moveCursor(3);
+  
   if (arduboy.justPressed(A_BUTTON)) {
-    startPlaying();
+    if (cursor == 0)
+      startPlaying();
+    else if (cursor == 1)
+      toggleSound();
+    else if (cursor == 2)
+      showStats();    
     return;
   }
   
-  if (arduboy.everyXFrames(10)) {
+  if (!paused && arduboy.everyXFrames(10)) {
+    if (hangman < 6) hangman++;
+    else hangman = 0;
+  }
+
+  drawLogo();
+  drawTitleMenu();
+  drawHangman();
+}
+
+void drawLogo() {
+  arduboy.setCursor(0,6);
+  arduboy.print(F("HANGMAN!"));
+  arduboy.drawFastHLine(0,15,45);
+  arduboy.setCursor(0,18);
+  arduboy.print(F(" by serisman"));
+}
+
+void drawTitleMenu() {
+  arduboy.setCursor(10,64-(8*3));
+  if (paused)
+    arduboy.print(F("Resume"));
+  else
+    arduboy.print(F("Start"));
+
+  arduboy.setCursor(10,64-(8*2));
+  arduboy.print(F("Sound:"));
+  if (arduboy.audio.enabled()) {
+    arduboy.print(F("ON"));
+  } else {
+    arduboy.print(F("OFF"));
+  }
+
+  arduboy.setCursor(10,64-(8*1));
+  arduboy.print(F("Stats"));
+  
+  drawMenuCursor(3);
+}
+
+void drawMenuCursor(uint8_t num) {
+  arduboy.setCursor(0,64-(8*num)+(cursor*8));
+  arduboy.print(F(">"));
+}
+
+void toggleSound() {
+  if (arduboy.audio.enabled()) {
+    sound.tones(soundIncorrect);
+    delay(250);
+  }
+  arduboy.audio.toggle();
+  if (arduboy.audio.enabled()) {
+    sound.tones(soundCorrect);
+    delay(250);
+  }
+  arduboy.audio.saveOnOff();
+}
+
+void showStats() {
+  mode = MODE_STATS;
+  cursor = 1;
+}
+
+void nextStatsFrame() {
+  moveCursor(2);
+  
+  if (arduboy.justPressed(A_BUTTON)) {
+    if (cursor == 0)
+      resetStats();
+    else if (cursor == 1)
+      showTitle(2);
+    return;
+  }
+
+  if (arduboy.justPressed(B_BUTTON)) {
+    showTitle(2);
+    return;
+  }
+
+  if (!paused && arduboy.everyXFrames(10)) {
     if (hangman < 6) hangman++;
     else hangman = 0;
   }
   
-  drawTitle();
+  drawStats();
+  drawStatsMenu();
   drawHangman();
 }
 
-void drawTitle() {
+void resetStats() {
+  wins = 0;
+  losses = 0;
+  EEPROM_saveScore(wins, losses);
+}
+
+void drawStats() {  
+  sprintf_P(buf, PSTR(" %u Wins\n %u Losses"), wins, losses);
   arduboy.setCursor(0,10);
-  arduboy.print(F("HANGMAN!"));
-  arduboy.drawFastHLine(0,19,45);
-  arduboy.setCursor(0,22);
-  arduboy.print(F(" by serisman"));
-  
-  sprintf_P(buf, PSTR("  %u Wins\n  %u Losses"), wins, losses);
-  arduboy.setCursor(0,64-16);
   arduboy.print(buf);
 }
 
+void drawStatsMenu() {
+  arduboy.setCursor(10,64-(8*2));
+  arduboy.print(F("Reset"));
+
+  arduboy.setCursor(10,64-(8*1));
+  arduboy.print(F("Back"));  
+
+  drawMenuCursor(2);
+}
+
 void startPlaying() {
-  pickAWord();
+  if (!paused) {
+    pickAWord();
+    hangman = 0;
+    memset(usedLetters, 0, sizeof(usedLetters));
+  }
+  paused = false;  
   cursor = 0;
-  hangman = 0;
-  memset(usedLetters, 0, sizeof(usedLetters));
   mode = MODE_PLAY;
 }
 
@@ -135,6 +262,12 @@ void nextPlayFrame() {
   }
 #endif
 
+  if (arduboy.justPressed(B_BUTTON)) {
+    paused = true;
+    showTitle(0);
+    return;
+  }
+  
   if (arduboy.everyXFrames(10)) {
     cursorBlink = 1-cursorBlink;
   }
@@ -150,6 +283,10 @@ void nextCorrectFrame() {
     startPlaying();
     return;
   }
+  if (arduboy.justPressed(B_BUTTON)) {
+    showTitle(0);
+    return;
+  }
   
   drawScore();
   drawHangman();
@@ -160,6 +297,10 @@ void nextCorrectFrame() {
 void nextDeadFrame() {
   if (arduboy.justPressed(A_BUTTON)) {
     startPlaying();
+    return;
+  }  
+  if (arduboy.justPressed(B_BUTTON)) {
+    showTitle(0);
     return;
   }
   
@@ -202,7 +343,12 @@ void drawHangman() {
   }
   if (hangman > 5) { // right leg
     arduboy.drawLine(LEFT+22, 52, LEFT+11, 40);
-  }  
+  }
+
+  if (paused) {
+    arduboy.setCursor(LEFT+7,64/2-4);
+    arduboy.print(F("Paused"));
+  }
 }
 
 void drawWord() {
@@ -274,17 +420,23 @@ void scoreResponse(char letter) {
       letterOk = true;
     }
   }
+  
   if (allDone) {
-    mode = MODE_CORRECT;
+    sound.tones(soundWin);
+    mode = MODE_CORRECT;    
     wins++;
     EEPROM_saveScore(wins, losses);
-  }
-  if (!letterOk) {
+  } else if (letterOk) {
+    sound.tones(soundCorrect);
+  } else {    
     hangman++;    
     if (hangman == 6) {
+      sound.tones(soundDead);
       mode = MODE_DEAD;
       losses++;
       EEPROM_saveScore(wins, losses);
+    } else {
+      sound.tones(soundIncorrect);
     }
   }
 }
