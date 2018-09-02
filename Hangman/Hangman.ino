@@ -1,13 +1,18 @@
 // HANGMAN!
 // --------
 // by serisman <arduboy@serisman.com>
+//
+// version: 1.1.0
+//  - Added cumulative wins/losses tracking (save/restore to/from EEPROM)
+//  - Show correct answer on loss
 // version: 1.0.0
+//  - Initial Release
 
 #include <Arduboy2.h>
-Arduboy2 arduboy;
 
 //#define DEBUG 1
 
+#include "EEPROM_Utils.h"
 #include "words.h"
 
 #define MODE_TITLE    0
@@ -15,9 +20,12 @@ Arduboy2 arduboy;
 #define MODE_CORRECT  2
 #define MODE_DEAD     3
 
+Arduboy2 arduboy;
+
 uint8_t mode = MODE_TITLE;
 
-uint16_t score = 0;
+uint8_t wins = 99;
+uint8_t losses = 99;
 uint8_t hangman = 0;
 uint16_t previousWordIndex = 0xFFFF;
 char currentWord[9];
@@ -25,9 +33,14 @@ uint8_t cursor = 0;
 uint8_t cursorBlink = 0;
 uint8_t usedLetters[26];
 
+char buf[30];
+
 void setup() {
   arduboy.begin();
   arduboy.setFrameRate(30);
+  EEPROM_init();
+  wins = EEPROM_getWins();
+  losses = EEPROM_getLosses();
 }
 
 void loop() {
@@ -79,8 +92,10 @@ void drawTitle() {
   arduboy.drawFastHLine(0,19,45);
   arduboy.setCursor(0,22);
   arduboy.print(F(" by serisman"));
+  
+  sprintf_P(buf, PSTR("  %u Wins\n  %u Losses"), wins, losses);
   arduboy.setCursor(0,64-16);
-  arduboy.print(F("Press A\n to begin."));
+  arduboy.print(buf);
 }
 
 void startPlaying() {
@@ -155,9 +170,7 @@ void nextDeadFrame() {
 }
 
 void drawScore() {
-  char buf[12];
-  itoa(score, buf, 10);
-  
+  sprintf_P(buf, PSTR("%uW-%uL"), wins, losses);    
   arduboy.setCursor((128-50)-(strlen(buf)*6),0);
   arduboy.print(buf);
 }
@@ -200,13 +213,17 @@ void drawWord() {
 #endif
   
   uint8_t x = 0;
-  const uint8_t y = 10;
+  const uint8_t y = 12;
   for (uint8_t chr=0; chr<strlen(currentWord); chr++) {
-    char letter = currentWord[chr];
+    uint8_t letter = currentWord[chr];
     if (usedLetters[letter-65] == 1) {
       arduboy.setCursor(x, y);
-      arduboy.print(letter);
+      arduboy.write(letter);
     } else {
+      if (mode == MODE_DEAD) {
+        arduboy.setCursor(x, y);
+        arduboy.write(letter+32); // be nice and show the correct answer
+      }
       arduboy.drawFastHLine(x-1, y+9, 7);
     }
     x += 9;
@@ -240,18 +257,11 @@ void drawKeyboard() {
 void drawCorrect() {
   arduboy.setCursor(0,35);
   arduboy.print(F("YOU GOT IT!"));
-  printContinue();
 }
 
 void drawDead() {
   arduboy.setCursor(0,35);
   arduboy.print(F("YOU'RE DEAD!"));
-  printContinue();
-}
-
-void printContinue() {
-  arduboy.setCursor(0,64-7);
-  arduboy.print(F("Press A to continue."));  
 }
 
 void scoreResponse(char letter) {
@@ -261,18 +271,20 @@ void scoreResponse(char letter) {
     char wordLetter = currentWord[chr];
     if (usedLetters[wordLetter-65] == 0) allDone = false;
     if (wordLetter == letter) {
-      score++;
       letterOk = true;
     }
   }
   if (allDone) {
     mode = MODE_CORRECT;
+    wins++;
+    EEPROM_saveScore(wins, losses);
   }
   if (!letterOk) {
-    if (score > 0) score--;
     hangman++;    
     if (hangman == 6) {
       mode = MODE_DEAD;
+      losses++;
+      EEPROM_saveScore(wins, losses);
     }
   }
 }
