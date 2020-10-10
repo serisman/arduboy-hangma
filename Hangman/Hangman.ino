@@ -2,6 +2,8 @@
 // --------
 // by serisman <arduboy@serisman.com>
 //
+// version: 1.2.1
+//  - Minor formatting/structure changes
 // version: 1.2.0
 //  - Added Sound Effects (with ability to turn them off)
 //  - Added a menu system (can always get back to the main menu with the B button)
@@ -25,6 +27,8 @@ ArduboyTones sound(arduboy.audio.enabled);
 #include "words.h"
 #include "sounds.h"
 
+#define FPS                 30u
+
 #define MODE_TITLE    0
 #define MODE_STATS    1
 #define MODE_PLAY     2
@@ -47,12 +51,10 @@ char buf[30];
 
 void setup() {
   arduboy.begin();
-  arduboy.setFrameRate(30);
+  arduboy.setFrameRate(FPS);
   sound.tones(soundWin);
-  
-  EEPROM_init();
-  wins = EEPROM_getWins();
-  losses = EEPROM_getLosses();
+
+  loadStats();
 }
 
 void loop() {
@@ -67,22 +69,12 @@ void nextFrame() {
   arduboy.pollButtons();
   arduboy.clear();
   switch (mode) {
-    case MODE_TITLE:
-      nextTitleFrame();
-      break;
-    case MODE_STATS:
-      nextStatsFrame();
-      break;
-    case MODE_PLAY:
-      nextPlayFrame();
-      break;
-    case MODE_CORRECT:
-      nextCorrectFrame();
-      break;
-    case MODE_DEAD:
-      nextDeadFrame();
-      break;
-  }    
+    case MODE_TITLE:    nextTitleFrame();   break;
+    case MODE_STATS:    nextStatsFrame();   break;
+    case MODE_PLAY:     nextPlayFrame();    break;
+    case MODE_CORRECT:  nextCorrectFrame(); break;
+    case MODE_DEAD:     nextDeadFrame();    break;
+  }
   arduboy.display();
 }
 
@@ -101,18 +93,18 @@ void moveCursor(uint8_t num) {
 
 void nextTitleFrame() {
   moveCursor(3);
-  
+
   if (arduboy.justPressed(A_BUTTON)) {
     if (cursor == 0)
       startPlaying();
     else if (cursor == 1)
       toggleSound();
     else if (cursor == 2)
-      showStats();    
+      showStats();
     return;
   }
-  
-  if (!paused && arduboy.everyXFrames(10)) {
+
+  if (!paused && arduboy.everyXFrames(FPS/3u)) {
     if (hangman < 6) hangman++;
     else hangman = 0;
   }
@@ -176,7 +168,7 @@ void showStats() {
 
 void nextStatsFrame() {
   moveCursor(2);
-  
+
   if (arduboy.justPressed(A_BUTTON)) {
     if (cursor == 0)
       resetStats();
@@ -190,23 +182,33 @@ void nextStatsFrame() {
     return;
   }
 
-  if (!paused && arduboy.everyXFrames(10)) {
+  if (!paused && arduboy.everyXFrames(FPS/3u)) {
     if (hangman < 6) hangman++;
     else hangman = 0;
   }
-  
+
   drawStats();
   drawStatsMenu();
   drawHangman();
 }
 
+void loadStats() {
+  EEPROM_init();
+  wins = EEPROM_getWins();
+  losses = EEPROM_getLosses();
+}
+
+void saveStats() {
+	EEPROM_saveScore(wins, losses);
+}
+
 void resetStats() {
   wins = 0;
   losses = 0;
-  EEPROM_saveScore(wins, losses);
+  saveStats();
 }
 
-void drawStats() {  
+void drawStats() {
   sprintf_P(buf, PSTR(" %u Wins\n %u Losses"), wins, losses);
   arduboy.setCursor(0,10);
   arduboy.print(buf);
@@ -217,7 +219,7 @@ void drawStatsMenu() {
   arduboy.print(F("Reset"));
 
   arduboy.setCursor(10,64-(8*1));
-  arduboy.print(F("Back"));  
+  arduboy.print(F("Back"));
 
   drawMenuCursor(2);
 }
@@ -228,7 +230,7 @@ void startPlaying() {
     hangman = 0;
     memset(usedLetters, 0, sizeof(usedLetters));
   }
-  paused = false;  
+  paused = false;
   cursor = 0;
   mode = MODE_PLAY;
 }
@@ -253,12 +255,13 @@ void nextPlayFrame() {
     if (usedLetters[cursor] == 0) {
       usedLetters[cursor] = 1;
       scoreResponse(cursor+65);
-    }    
+    }
   }
 
 #ifdef DEBUG
   if (arduboy.justPressed(B_BUTTON)) { // For easier testing...
     startPlaying();
+    return;
   }
 #endif
 
@@ -267,15 +270,15 @@ void nextPlayFrame() {
     showTitle(0);
     return;
   }
-  
-  if (arduboy.everyXFrames(10)) {
+
+  if (arduboy.everyXFrames(FPS/3u)) {
     cursorBlink = 1-cursorBlink;
   }
-  
+
   drawScore();
   drawHangman();
   drawWord();
-  drawKeyboard();  
+  drawKeyboard();
 }
 
 void nextCorrectFrame() {
@@ -287,7 +290,7 @@ void nextCorrectFrame() {
     showTitle(0);
     return;
   }
-  
+
   drawScore();
   drawHangman();
   drawWord();
@@ -298,12 +301,12 @@ void nextDeadFrame() {
   if (arduboy.justPressed(A_BUTTON)) {
     startPlaying();
     return;
-  }  
+  }
   if (arduboy.justPressed(B_BUTTON)) {
     showTitle(0);
     return;
   }
-  
+
   drawScore();
   drawHangman();
   drawWord();
@@ -311,7 +314,7 @@ void nextDeadFrame() {
 }
 
 void drawScore() {
-  sprintf_P(buf, PSTR("%uW-%uL"), wins, losses);    
+  sprintf_P(buf, PSTR("%uW-%uL"), wins, losses);
   arduboy.setCursor((128-50)-(strlen(buf)*6),0);
   arduboy.print(buf);
 }
@@ -326,24 +329,18 @@ void drawHangman() {
   arduboy.fillRect(LEFT+10, 0, 20, 3); // bar
   arduboy.fillRect(LEFT+10, 0, 3, 10); // noose
 
-  if (hangman > 0) { // head
+  if (hangman > 0)  // head
     arduboy.drawCircle(LEFT+11, 15, 5);
-  }
-  if (hangman > 1) { // body
+  if (hangman > 1)  // body
     arduboy.drawFastVLine(LEFT+11, 20, 20);
-  }
-  if (hangman > 2) { // left arm
+  if (hangman > 2)  // left arm
     arduboy.drawLine(LEFT+0, 22, LEFT+11, 25);
-  }
-  if (hangman > 3) { // right arm
+  if (hangman > 3)  // right arm
     arduboy.drawLine(LEFT+22, 22, LEFT+11, 25);
-  }
-  if (hangman > 4) { // left leg
+  if (hangman > 4)  // left leg
     arduboy.drawLine(LEFT+0, 52, LEFT+11, 40);
-  }
-  if (hangman > 5) { // right leg
+  if (hangman > 5)  // right leg
     arduboy.drawLine(LEFT+22, 52, LEFT+11, 40);
-  }
 
   if (paused) {
     arduboy.setCursor(LEFT+7,64/2-4);
@@ -352,12 +349,12 @@ void drawHangman() {
 }
 
 void drawWord() {
-  
+
 #ifdef DEBUG
   arduboy.setCursor(0,0);
   arduboy.print(currentWord); // for easier testing...
 #endif
-  
+
   uint8_t x = 0;
   const uint8_t y = 12;
   for (uint8_t chr=0; chr<strlen(currentWord); chr++) {
@@ -393,11 +390,11 @@ void drawKeyboard() {
 
     arduboy.setCursor(x, y);
     if (usedLetters[chr] == 0) {
-      arduboy.write(chr+65); 
+      arduboy.write(chr+65);
     } else {
       arduboy.write(chr+97); // use lower case for already used letters
     }
-  }  
+  }
 }
 
 void drawCorrect() {
@@ -415,26 +412,26 @@ void scoreResponse(char letter) {
   bool letterOk = false;
   for (uint8_t chr=0; chr<strlen(currentWord); chr++) {
     char wordLetter = currentWord[chr];
-    if (usedLetters[wordLetter-65] == 0) allDone = false;
-    if (wordLetter == letter) {
+    if (usedLetters[wordLetter-65] == 0)
+      allDone = false;
+    if (wordLetter == letter)
       letterOk = true;
-    }
   }
-  
+
   if (allDone) {
     sound.tones(soundWin);
-    mode = MODE_CORRECT;    
+    mode = MODE_CORRECT;
     wins++;
-    EEPROM_saveScore(wins, losses);
+    saveStats();
   } else if (letterOk) {
     sound.tones(soundCorrect);
-  } else {    
-    hangman++;    
+  } else {
+    hangman++;
     if (hangman == 6) {
       sound.tones(soundDead);
       mode = MODE_DEAD;
       losses++;
-      EEPROM_saveScore(wins, losses);
+      saveStats();
     } else {
       sound.tones(soundIncorrect);
     }
@@ -445,7 +442,7 @@ void pickAWord() {
   uint16_t newWordIndex;
   uint8_t wordCount;
   uint16_t offset=0;
-  
+
   //arduboy.initRandomSeed();
   randomSeed(millis());
   do {
@@ -467,4 +464,3 @@ void pickAWord() {
     offset += ((uint16_t)wordCount * (uint16_t)wordLen);
   }
 }
-
